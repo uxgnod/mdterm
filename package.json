@@ -19,7 +19,7 @@
   "keywords": ["markdown", "terminal", "tui", "cli", "reader"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/uxgnod/mdterm.git"
+    "url": "git+https://github.com/uxgnod/mdterm.git"
   },
   "homepage": "https://github.com/uxgnod/mdterm#readme",
   "bugs": {

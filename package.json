@@ -1,0 +1,54 @@
+{
+  "name": "mdterm",
+  "version": "0.5.0",
+  "description": "A keyboard- and mouse-friendly Markdown reader for the terminal",
+  "license": "MIT",
+  "bin": {
+    "md": "dist/cli.js",
+    "mdview": "dist/mdview.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README_CN.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
+  ],
+  "keywords": ["markdown", "terminal", "tui", "cli", "reader"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uxgnod/mdterm.git"
+  },
+  "homepage": "https://github.com/uxgnod/mdterm#readme",
+  "bugs": {
+    "url": "https://github.com/uxgnod/mdterm/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/md.ts",
+    "start": "node dist/cli.js",
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.cjs",
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "cli-highlight": "2.1.11",
+    "marked": "15.0.12",
+    "marked-terminal": "7.3.0",
+    "neo-blessed": "0.2.0",
+    "string-width": "4.2.3",
+    "strip-ansi": "6.0.1"
+  },
+  "devDependencies": {
+    "@types/blessed": "0.1.27",
+    "@types/node": "20.16.1",
+    "tsup": "8.5.1",
+    "tsx": "4.23.12",
+    "typescript": "5.5.4"
+  }
+}

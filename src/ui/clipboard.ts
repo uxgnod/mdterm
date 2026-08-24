@@ -75,6 +75,8 @@ function runClipboardCommand(
     }
 
     let finished = false;
+    let spawned = false;
+    let terminationRequested = false;
     let reason: CommandResult["reason"];
     let timer: NodeJS.Timeout | undefined;
     let killTimer: NodeJS.Timeout | undefined;
@@ -86,8 +88,9 @@ function runClipboardCommand(
       signal?.removeEventListener("abort", onAbort);
       resolve({ ok, reason });
     };
-    const stop = (nextReason: NonNullable<CommandResult["reason"]>): void => {
-      reason = nextReason;
+    const terminate = (): void => {
+      if (finished || terminationRequested) return;
+      terminationRequested = true;
       killChild(child);
       killTimer = setTimeout(() => {
         if (!finished) {
@@ -99,22 +102,79 @@ function runClipboardCommand(
         }
       }, 250);
     };
+    const stop = (nextReason?: NonNullable<CommandResult["reason"]>): void => {
+      if (!reason && nextReason) reason = nextReason;
+      terminate();
+    };
     const onAbort = (): void => stop("cancelled");
 
-    child.once("error", () => finish(false));
-    child.once("close", (code: number | null) => finish(code === 0 && !reason));
+    child.once("spawn", () => {
+      spawned = true;
+    });
+    child.once("error", () => {
+      // An error before spawn is a confirmed spawn failure. Once the child
+      // exists, all errors (including stdin EPIPE) must be reaped via close.
+      if (!spawned) finish(false);
+      else stop();
+    });
+    child.once("close", (code: number | null) => finish(code === 0 && !reason && !terminationRequested));
     // stdin errors are represented by the process result; they must not
     // become unhandled errors during shutdown.
     const stdin = child.stdin;
     if (!stdin) {
-      finish(false);
+      stop();
       return;
     }
-    stdin.once("error", () => finish(false));
-    stdin.end(text);
+    stdin.once("error", () => stop());
     timer = setTimeout(() => stop("timeout"), timeoutMs);
-    if (signal?.aborted) onAbort();
-    else signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      stdin.end(text);
+    } catch {
+      stop();
+    }
+  });
+}
+
+function runInjectedClipboardCommand(
+  command: string,
+  args: readonly string[],
+  text: string,
+  runCommand: NonNullable<ClipboardOptions["runCommand"]>,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): Promise<CommandResult> {
+  return new Promise((resolve) => {
+    const controller = new AbortController();
+    let finished = false;
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (result: CommandResult): void => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(result);
+    };
+    const onAbort = (): void => {
+      controller.abort();
+      finish({ ok: false, reason: "cancelled" });
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    timer = setTimeout(() => {
+      controller.abort();
+      finish({ ok: false, reason: "timeout" });
+    }, timeoutMs);
+    Promise.resolve()
+      .then(() => runCommand(command, args, text, controller.signal))
+      .then((ok) => finish({ ok }), () => finish({ ok: false }));
   });
 }
 
@@ -157,7 +217,7 @@ export async function copyToClipboard(text: string, options: ClipboardOptions = 
   for (const [command, args] of commandCandidates(platform)) {
     if (!commandAvailable(command)) continue;
     const commandResult = options.runCommand
-      ? { ok: await options.runCommand(command, args, text, options.signal) }
+      ? await runInjectedClipboardCommand(command, args, text, options.runCommand, options.signal, options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
       : await runClipboardCommand(command, args, text, options.signal, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     if (commandResult.reason === "timeout") timedOut = true;
     if (commandResult.ok && !options.signal?.aborted) {

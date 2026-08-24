@@ -70,7 +70,7 @@ mdview README.md
 
 ```bash
 md README.md
-mdview docs/guide.md
+mdview README_CN.md
 md README.md --toc
 md README.md --lang zh-CN
 md README.md --no-mouse

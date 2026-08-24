@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { constants, type Stats } from "node:fs";
+import { chmod, mkdir, open, rename, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -43,7 +44,14 @@ export interface ConfigSaveResult {
 type KnownKey = keyof UserPreferences;
 
 function homeDirectory(home?: string): string {
-  return home ?? process.env.HOME ?? process.env.USERPROFILE ?? os.homedir();
+  const candidates = [home, process.env.HOME, process.env.USERPROFILE];
+  try {
+    candidates.push(os.userInfo().homedir);
+  } catch {
+    // Fall through to os.homedir() below.
+  }
+  candidates.push(os.homedir());
+  return candidates.find((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0 && path.isAbsolute(candidate)) ?? path.join(os.tmpdir(), "mdterm-home");
 }
 
 export function configPath(home?: string): string {
@@ -136,20 +144,47 @@ async function backupInvalidFile(target: string): Promise<boolean> {
 }
 
 async function readObject(target: string): Promise<{ object?: Record<string, unknown>; issue?: ConfigIssue; missing: boolean }> {
-  let buffer: Buffer;
+  let handle;
   try {
-    buffer = await readFile(target);
+    handle = await open(target, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return { missing: true };
     return { issue: "read", missing: false };
   }
-  if (buffer.byteLength > CONFIG_MAX_BYTES) return { issue: "invalid", missing: false };
   try {
-    const parsed: unknown = JSON.parse(buffer.toString("utf8"));
+    let initialStat: Stats;
+    try {
+      initialStat = await handle.stat();
+    } catch {
+      return { issue: "read", missing: false };
+    }
+    if (!initialStat.isFile()) return { issue: "invalid", missing: false };
+    if (initialStat.size > CONFIG_MAX_BYTES) return { issue: "invalid", missing: false };
+    const buffer = Buffer.alloc(CONFIG_MAX_BYTES + 1);
+    let offset = 0;
+    let finalStat: Stats;
+    try {
+      while (offset < buffer.byteLength) {
+        const result = await handle.read(buffer, offset, buffer.byteLength - offset, null);
+        offset += result.bytesRead;
+        if (result.bytesRead === 0) break;
+      }
+      finalStat = await handle.stat();
+    } catch {
+      return { issue: "read", missing: false };
+    }
+    if (!finalStat.isFile() || offset > CONFIG_MAX_BYTES || finalStat.size > CONFIG_MAX_BYTES) return { issue: "invalid", missing: false };
+    const contents = buffer.subarray(0, offset);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(contents.toString("utf8"));
+    } catch {
+      return { issue: "invalid", missing: false };
+    }
     return isObject(parsed) ? { object: parsed, missing: false } : { issue: "invalid", missing: false };
-  } catch {
-    return { issue: "invalid", missing: false };
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -169,9 +204,10 @@ export class ConfigStore {
     return { ...this.preferences };
   }
 
-  set(key: KnownKey, value: UserPreferences[KnownKey]): Promise<ConfigSaveResult> {
+  set<K extends KnownKey>(key: K, value: UserPreferences[K]): Promise<ConfigSaveResult> {
     this.preferences = { ...this.preferences, [key]: value };
-    this.queue = this.queue.then(() => this.writeLatest());
+    const patch = { [key]: value } as Partial<UserPreferences>;
+    this.queue = this.queue.then(() => this.writePatch(patch));
     return this.queue;
   }
 
@@ -179,12 +215,23 @@ export class ConfigStore {
     return this.queue;
   }
 
-  private async writeLatest(): Promise<ConfigSaveResult> {
+  private async writePatch(patch: Partial<UserPreferences>): Promise<ConfigSaveResult> {
     try {
       const disk = await readObject(this.path);
-      const diskExtras = disk.object ? extrasOf(disk.object) : {};
-      this.extras = { ...this.extras, ...diskExtras };
-      await atomicWrite(this.path, { ...this.extras, ...this.preferences });
+      if (disk.issue === "read") return { ok: false, issue: "write-failed" };
+
+      let diskPreferences = this.preferences;
+      if (disk.issue === "invalid") {
+        const backedUp = await backupInvalidFile(this.path);
+        if (!backedUp) return { ok: false, issue: "write-failed" };
+      } else if (disk.object) {
+        diskPreferences = parsePreferences(disk.object).preferences;
+        this.extras = { ...this.extras, ...extrasOf(disk.object) };
+      }
+
+      const next = { ...diskPreferences, ...patch };
+      await atomicWrite(this.path, { ...this.extras, ...next });
+      this.preferences = { ...this.preferences, ...next };
       return { ok: true };
     } catch {
       return { ok: false, issue: "write-failed" };

@@ -29,7 +29,7 @@ test("help and version are friendly and successful", () => {
   assert.match(help.stdout, /md <file\.md>/);
   assert.match(help.stdout, /mdview <file\.md>/);
   assert.match(help.stdout, /Options:/);
-  assert.match(help.stdout, /Disable mouse input/);
+  assert.match(help.stdout, /Disable application mouse input/);
   assert.doesNotMatch(help.stdout, /用法|禁用鼠标/);
   assert.equal(help.stderr, "");
 
@@ -40,7 +40,7 @@ test("help and version are friendly and successful", () => {
   const chinese = run(["--lang", "zh-CN", "--help"]);
   assert.equal(chinese.status, 0);
   assert.match(chinese.stdout, /用法:/);
-  assert.match(chinese.stdout, /禁用鼠标/);
+  assert.match(chinese.stdout, /禁用应用鼠标输入/);
   assert.doesNotMatch(chinese.stdout, /Options:/);
 });
 
@@ -111,6 +111,29 @@ test("invalid UTF-8 is rejected and valid files reach the TTY check", () => {
   const validResult = run(["--toc", valid, "--no-mouse"]);
   assert.equal(validResult.status, 1);
   assert.match(validResult.stderr, /interactive terminal/);
+});
+
+test("non-TTY errors use the actual md or mdview command name", () => {
+  const temporary = mkdtempSync(path.join(os.tmpdir(), "mdterm-command-name-"));
+  const file = path.join(temporary, "valid.md");
+  writeFileSync(file, "# title\n", "utf8");
+  try {
+    for (const [commandName, entry] of [["md", cli], ["mdview", path.join(__dirname, "..", "dist", "mdview.js")]]) {
+      const result = runInHome(temporary, [file], entry);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, new RegExp(`^${commandName}: ${commandName} must run in an interactive terminal\\.`));
+    }
+    for (const [commandName, entry] of [["md", cli], ["mdview", path.join(__dirname, "..", "dist", "mdview.js")]]) {
+      const result = spawnSync(process.execPath, [entry, "--lang", "zh-CN", file], {
+        encoding: "utf8",
+        env: { ...process.env, HOME: temporary, USERPROFILE: temporary },
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, new RegExp(`^${commandName}：${commandName} 必须在交互式终端中运行。`));
+    }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 });
 
 test("an unreadable file gets a clear permission error", { skip: process.platform === "win32" }, () => {

@@ -21,7 +21,7 @@ export interface MessageCatalog {
   notFile: (value: string) => string;
   readFailed: string;
   invalidUtf8: (value: string) => string;
-  interactiveRequired: string;
+  interactiveRequired: (command: string) => string;
   startupFailed: (value: string) => string;
   runtimeError: (value: string) => string;
   mouseUnavailable: string;
@@ -112,7 +112,7 @@ export const catalogs: Record<Locale, MessageCatalog> = {
     appTitle: "mdterm — Terminal Markdown Reader",
     usage: "Usage:",
     optionsHeading: "Options:",
-    optionNoMouse: "  --no-mouse  Disable mouse input; use keyboard-only mode",
+    optionNoMouse: "  --no-mouse  Disable application mouse input; use terminal-native selection",
     optionToc: "  --toc       Open the table of contents at startup",
     optionLang: "  --lang      Interface language: en or zh-CN",
     optionHelp: "  -h, --help  Show help",
@@ -129,10 +129,10 @@ export const catalogs: Record<Locale, MessageCatalog> = {
     notFile: (value) => `Path is not a file: ${safe(value)}`,
     readFailed: "Failed to read file.",
     invalidUtf8: (value) => `File is not valid UTF-8 text: ${safe(value)}`,
-    interactiveRequired: "md must run in an interactive terminal.",
+    interactiveRequired: (command) => `${safe(command)} must run in an interactive terminal.`,
     startupFailed: (value) => `Startup failed: ${safe(value)}`,
     runtimeError: (value) => `Runtime error: ${safe(value)}`,
-    mouseUnavailable: "Mouse unavailable; using keyboard mode",
+    mouseUnavailable: "Mouse unavailable; use terminal-native selection",
     largeDocument: "Large file: lightweight rendering",
     plainTextFallback: "Fell back to plain text",
     previewTruncated: "Large document preview truncated safely",
@@ -227,7 +227,7 @@ export const catalogs: Record<Locale, MessageCatalog> = {
       "TOC        t               show or hide table of contents",
       "           ↑/↓ + Enter     select and jump",
       "           Tab             focus content / TOC",
-      "Links      Ctrl+left-click  open http(s)",
+      "No mouse   drag/auto-copy/[Copy]/Ctrl-left-click unavailable; terminal-native",
       "",
       "Text selection --no-mouse  use terminal-native selection",
       "Background b               Dark ↔ Terminal",
@@ -245,7 +245,7 @@ export const catalogs: Record<Locale, MessageCatalog> = {
     appTitle: "mdterm — 终端 Markdown 阅读器",
     usage: "用法:",
     optionsHeading: "选项:",
-    optionNoMouse: "  --no-mouse  禁用鼠标，使用纯键盘模式",
+    optionNoMouse: "  --no-mouse  禁用应用鼠标输入，使用终端原生文本选择",
     optionToc: "  --toc       启动时展开目录面板",
     optionLang: "  --lang      界面语言：en 或 zh-CN",
     optionHelp: "  -h, --help  显示帮助",
@@ -262,10 +262,10 @@ export const catalogs: Record<Locale, MessageCatalog> = {
     notFile: (value) => `路径不是文件：${safe(value)}`,
     readFailed: "读取文件失败。",
     invalidUtf8: (value) => `文件不是有效的 UTF-8 文本：${safe(value)}`,
-    interactiveRequired: "md 必须在交互式终端中运行。",
+    interactiveRequired: (command) => `${safe(command)} 必须在交互式终端中运行。`,
     startupFailed: (value) => `启动失败：${safe(value)}`,
     runtimeError: (value) => `运行时发生错误：${safe(value)}`,
-    mouseUnavailable: "鼠标不可用，已切换键盘模式",
+    mouseUnavailable: "鼠标不可用，请使用终端原生文本选择",
     largeDocument: "大文件：轻量渲染",
     plainTextFallback: "已降级为纯文本",
     previewTruncated: "大文档预览已安全截断",
@@ -360,7 +360,7 @@ export const catalogs: Record<Locale, MessageCatalog> = {
       "目录     t               显示或隐藏目录",
       "           ↑/↓ + Enter     选择并跳转",
       "           Tab             正文与目录切换",
-      "链接     Ctrl+左键         打开 http(s)",
+      "无鼠标   应用拖选/自动复制/[复制]/Ctrl+左键不可用；终端原生文本选择",
       "",
       "文本选择 --no-mouse      使用终端原生文本选择",
       "背景     b               深色 ↔ 终端",

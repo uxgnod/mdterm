@@ -70,7 +70,7 @@ mdview README.md
 
 ```bash
 md README.md
-mdview docs/guide.md
+mdview README_CN.md
 md README.md --toc
 md README.md --lang zh-CN
 md README.md --no-mouse
@@ -185,10 +185,10 @@ npm test
 
 测试使用临时 home 和 fake 剪贴板/opener，不要指向真实用户配置或全局 npm prefix。参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [SECURITY.md](SECURITY.md)。
 
-## Roadmap
+## 路线图
 
 编辑、文件监听、富图片、脚注、TOC hover 和设置页面不在 0.5 范围内，当前 CLI 和 README 不暗示这些功能已经实现。
 
-## License
+## 许可证
 
 MIT，见 [LICENSE](LICENSE)。

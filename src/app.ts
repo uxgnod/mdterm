@@ -129,6 +129,7 @@ export function runApp(options: AppOptions): Promise<number> {
     let reflowInProgress = false;
     let resizeTimer: NodeJS.Timeout | undefined;
     let searchTimer: NodeJS.Timeout | undefined;
+    let searchInputUpdate: NodeJS.Immediate | undefined;
     let gTimer: NodeJS.Timeout | undefined;
     let noticeTimer: NodeJS.Timeout | undefined;
     let pendingG = false;
@@ -349,6 +350,7 @@ export function runApp(options: AppOptions): Promise<number> {
     const clearTimers = (): void => {
       if (resizeTimer) clearTimeout(resizeTimer);
       if (searchTimer) clearTimeout(searchTimer);
+      if (searchInputUpdate) clearImmediate(searchInputUpdate);
       if (gTimer) clearTimeout(gTimer);
       if (noticeTimer) clearTimeout(noticeTimer);
     };
@@ -616,10 +618,23 @@ export function runApp(options: AppOptions): Promise<number> {
 
     let closingSearch = false;
 
+    const queueSearchAfterInput = (): void => {
+      if (searchInputUpdate) clearImmediate(searchInputUpdate);
+      searchInputUpdate = setImmediate(() => {
+        searchInputUpdate = undefined;
+        // neo-blessed emits textbox keypress before its internal handler has
+        // committed the character to getValue(). Defer one turn so live
+        // search observes the same value that the user sees in the box.
+        if (!stopped && mode === "search") queueSearch();
+      });
+    };
+
     const closeSearch = (clear: boolean): void => {
       if (closingSearch) return;
       closingSearch = true;
       if (searchTimer) clearTimeout(searchTimer);
+      if (searchInputUpdate) clearImmediate(searchInputUpdate);
+      searchInputUpdate = undefined;
       try {
         searchInput.hide();
         searchInput.cancel();
@@ -666,7 +681,7 @@ export function runApp(options: AppOptions): Promise<number> {
         shutdown(0);
         return;
       }
-      if (key.name !== "enter" && key.name !== "escape") queueSearch();
+      if (key.name !== "enter" && key.name !== "escape") queueSearchAfterInput();
     });
     searchInput.on("submit", () => {
       if (mode === "search") closeSearch(false);

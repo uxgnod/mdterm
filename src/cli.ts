@@ -173,7 +173,7 @@ export async function main(args: readonly string[] = process.argv.slice(2), comm
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    process.stderr.write(`${commandError(options.locale, commandName, messages(options.locale).interactiveRequired)}\n`);
+    process.stderr.write(`${commandError(options.locale, commandName, messages(options.locale).interactiveRequired(commandName))}\n`);
     return 1;
   }
 

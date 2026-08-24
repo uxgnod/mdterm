@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
-const { chmodSync, mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+const { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const stripAnsi = require("strip-ansi");
@@ -70,6 +70,19 @@ while time.time() - started < 8:
         if capture_before_events or event_index > 0:
             event_chunks.append(bytes(output[last_event_offset:]).decode("utf-8", "replace"))
         payload = events[event_index][1]
+        if isinstance(payload, dict) and payload.get("type") == "waitForFile":
+            filename = payload.get("path", "")
+            deadline = started + float(payload.get("timeout", 7))
+            if not os.path.exists(filename):
+                event_chunks.pop()
+                if time.time() >= deadline:
+                    timed_out = True
+                    break
+                time.sleep(0.01)
+                continue
+            event_index += 1
+            last_event_offset = len(output)
+            continue
         if isinstance(payload, dict) and payload.get("type") == "resize":
             fcntl.ioctl(
                 fd,
@@ -547,6 +560,49 @@ test("CODECOPY-01 hides buttons for no-mouse, TERM fallback and narrow viewports
   assert.doesNotMatch(narrow.output, /\[(?:Copy|复制)\]/);
 });
 
+test("CODECOPY-02 q and Ctrl+c abort a hanging backend without an orphan or late UI", (context) => {
+  if (process.platform === "win32" || spawnSync("python3", ["--version"]).status !== 0) {
+    context.skip("python3 PTY helper is unavailable");
+    return;
+  }
+  for (const [label, quit] of [["q", "q"], ["Ctrl+c", "\u0003"]]) {
+    const directory = mkdtempSync(path.join(os.tmpdir(), `mdterm-clipboard-pty-${label}-`));
+    const pidFile = path.join(directory, "child.pid");
+    const script = `#!${process.execPath}\nconst fs = require("node:fs"); fs.writeFileSync(process.env.MDTERM_CLIPBOARD_PID, String(process.pid)); process.stdin.on("data", () => {}); process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);\n`;
+    for (const commandName of ["pbcopy", "wl-copy"]) {
+      const command = path.join(directory, commandName);
+      writeFileSync(command, script, "utf8");
+      chmodSync(command, 0o700);
+    }
+    try {
+      const result = runPty(
+        [codeCopyFixture],
+        [
+          [5.0, codeButtonDown],
+          [5.1, codeButtonUp],
+          [5.2, { type: "waitForFile", path: pidFile, timeout: 7 }],
+          [6.0, quit],
+        ],
+        { PATH: `${directory}:${process.env.PATH ?? ""}`, MDTERM_CLIPBOARD_PID: pidFile },
+      );
+      assert.ok(result, `${label} PTY result`);
+      assert.equal(result.status, 0, `${label} must exit through the TUI shutdown path`);
+      assert.doesNotMatch(result.output, /\[(?:Copied|Sent|Failed)\]/, `${label} must not publish a late copy result`);
+      const pid = Number(readFileSync(pidFile, "utf8"));
+      let alive = true;
+      try {
+        process.kill(pid, 0);
+      } catch {
+        alive = false;
+      }
+      assert.equal(alive, false, `${label} clipboard child ${pid} must be reaped`);
+      assert.match(result.output, /\x1b\[\?1049l/);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
+
 test("CODECOPY-01 exposes copy hitboxes for list and blockquote fenced code", (context) => {
   if (process.platform === "win32" || spawnSync("python3", ["--version"]).status !== 0) {
     context.skip("python3 PTY helper is unavailable");
@@ -596,6 +652,12 @@ test("--no-mouse footer and help hide application m/y actions", (context) => {
   assert.doesNotMatch(footer, /(?:^| · )m(?: | ·|$)|(?:^| · )y(?: | ·|$)/u);
   const help = terminalSnapshots(result)[0] ?? "";
   assert.doesNotMatch(help, /Text selection m|文本选择 m|\by\s+copy|\by\s+复制/u);
+  assert.doesNotMatch(help, /open http|打开 http/u);
+  assert.match(help, /Ctrl-left-click/u);
+  assert.match(help, /unavailable/u);
+  assert.match(help, /drag|应用拖选/u);
+  assert.match(help, /auto-copy|自动复制/u);
+  assert.match(help, /\[Copy\]|\[复制\]/u);
   assert.match(help, /terminal-native|终端原生文本选择/u);
 });
 
@@ -879,12 +941,12 @@ test("SEARCH-01 keeps a persistent navigation bar and supports n/p/N, edit and c
       [3.4, "n"],
       [4.0, "p"],
       [4.6, "N"],
-      [5.2, "/"],
-      [5.5, "\u007f"],
-      [5.8, "X"],
-      [6.2, "\u000d"],
-      [6.3, "\u001b"],
-      [6.9, "q"],
+      [4.7, "/"],
+      [5.0, "\u007f"],
+      [5.3, "X"],
+      [5.7, "\u000d"],
+      [5.8, "\u001b"],
+      [6.1, "q"],
     ],
   );
   assert.ok(result);
@@ -906,13 +968,37 @@ test("SEARCH-01 keeps a persistent navigation bar and supports n/p/N, edit and c
   // query and the edit marker independently instead of requiring one raw
   // byte substring across those updates.
   assert.match(visible, /Alpha中文Bet/);
-  assert.match(visible, /Search[\s\S]{0,80}X/);
+  assert.match(visible, /Alpha中文BetX/);
   const sgrSequences = [...new Set(result.output.match(/\x1b\[[0-9;]*m/g) ?? [])].join(", ");
   assert.ok(
     hasOutlinedCurrentMatch(result.output),
     `current search match must keep bold/underline/bright foreground without inverse; observed SGR: ${sgrSequences}`,
   );
   assert.doesNotMatch(result.output, /\x1b\[7m/);
+  assert.match(result.output, /\x1b\[\?1049l/);
+});
+
+test("SEARCH-01 live input matches the visible multi-character Chinese query", (context) => {
+  if (process.platform === "win32" || spawnSync("python3", ["--version"]).status !== 0) {
+    context.skip("python3 PTY helper is unavailable");
+    return;
+  }
+  const result = runPty(
+    [fixture],
+    [
+      [2.0, "/"],
+      [2.3, "中文"],
+      [3.9, "\u000d"],
+      [4.8, "q"],
+    ],
+    { PTY_ROWS: "30", PTY_COLS: "100" },
+  );
+  assert.ok(result);
+  assert.equal(result.status, 0);
+  const liveStatus = terminalSnapshots(result)[1]?.split("\n")[0] ?? "";
+  assert.match(liveStatus, /Search[\s\S]*1\/8/, `live status must follow the visible 中文 query: ${liveStatus}`);
+  assert.doesNotMatch(liveStatus, /1\/9/, `live status used a stale one-character query: ${liveStatus}`);
+  assert.match(visibleText(result.output), /中文/);
   assert.match(result.output, /\x1b\[\?1049l/);
 });
 
@@ -1285,8 +1371,8 @@ test("fallback mouse notice follows the active language in both directions", (co
   );
   assert.ok(result);
   assert.equal(result.status, 0);
-  assert.match(result.output, /Mouse unavailable; using keyboard mode/);
-  assert.match(result.output, /鼠标不可用，已切换键盘模式/);
+  assert.match(result.output, /Mouse[\s\S]{0,200}terminal-native/);
+  assert.match(result.output, /鼠标[\s\S]{0,200}终端原生/);
   assert.doesNotMatch(result.output, mouseModeEnable);
 });
 

@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { chmodSync, mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+const { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -112,6 +112,11 @@ test("no-mouse chrome and help do not advertise application selection or copy ac
     }
     const help = messages(locale).helpContentForMouse(false);
     assert.doesNotMatch(help, /Text selection m|文本选择 m|\by\s+copy|\by\s+复制/u);
+    assert.doesNotMatch(help, /open http|打开 http/u);
+    assert.match(help, /Ctrl-left-click unavailable|Ctrl[+]左键[^\n]*不可用/u);
+    assert.match(help, /drag|应用拖选/u);
+    assert.match(help, /auto-copy|自动复制/u);
+    assert.match(help, /\[Copy\]|\[复制\]/u);
     assert.match(help, /terminal-native|终端原生文本选择/u);
   }
 });
@@ -303,7 +308,49 @@ test("OSC 52 has its own 100 KiB input limit", async () => {
   assert.match(oversized.message, /OSC 52/);
 });
 
-test("async clipboard timeout and abort terminate a hanging backend", async () => {
+test("injected clipboard timeout and abort behavior is cross-platform", async () => {
+  let timeoutObserved = false;
+  const timedOut = await copyToClipboard("timeout", {
+    platform: "linux",
+    timeoutMs: 20,
+    commandAvailable: (command) => command === "wl-copy",
+    runCommand: async (_command, _args, _text, signal) => {
+      return new Promise((resolve) => {
+        signal?.addEventListener("abort", () => {
+          timeoutObserved = true;
+          resolve(false);
+        }, { once: true });
+      });
+    },
+    writeOsc52: () => false,
+  });
+  assert.equal(timedOut.status, "failed");
+  assert.match(timedOut.message, /timed out|超时/u);
+  assert.equal(timeoutObserved, true);
+
+  const controller = new AbortController();
+  let abortObserved = false;
+  const pending = copyToClipboard("cancel", {
+    platform: "linux",
+    commandAvailable: (command) => command === "wl-copy",
+    runCommand: (_command, _args, _text, signal) => new Promise((resolve) => {
+      const onAbort = () => {
+        abortObserved = true;
+        signal?.removeEventListener("abort", onAbort);
+        resolve(false);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+    }),
+    signal: controller.signal,
+    writeOsc52: () => false,
+  });
+  setImmediate(() => controller.abort());
+  const cancelled = await pending;
+  assert.equal(cancelled.status, "failed");
+  assert.equal(abortObserved, true);
+});
+
+test("Unix clipboard timeout and abort terminate a hanging backend", { skip: process.platform === "win32" }, async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "mdterm-clipboard-hang-"));
   const command = path.join(directory, "wl-copy");
   writeFileSync(command, "#!/usr/bin/env node\nprocess.stdin.on('data', () => {}); setTimeout(() => {}, 10_000);\n", "utf8");
@@ -323,6 +370,41 @@ test("async clipboard timeout and abort terminate a hanging backend", async () =
     assert.match(cancelled.message, /cancelled|取消/u);
   } finally {
     process.env.PATH = previousPath;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Unix clipboard reaps an EPIPE child that ignores SIGTERM", { skip: process.platform === "win32" }, async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "mdterm-clipboard-ePIPE-"));
+  const command = path.join(directory, "wl-copy");
+  const pidFile = path.join(directory, "child.pid");
+  writeFileSync(command, `#!${process.execPath}\nconst fs = require("node:fs"); fs.writeFileSync(process.env.MDTERM_CLIPBOARD_PID, String(process.pid)); try { fs.closeSync(0); } catch {} process.stdin.destroy(); process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);\n`, "utf8");
+  chmodSync(command, 0o700);
+  const previousPath = process.env.PATH;
+  const previousPid = process.env.MDTERM_CLIPBOARD_PID;
+  process.env.PATH = `${directory}:${previousPath ?? ""}`;
+  process.env.MDTERM_CLIPBOARD_PID = pidFile;
+  try {
+    const started = Date.now();
+    const result = await copyToClipboard("x".repeat(4 * 1024 * 1024), {
+      platform: "linux",
+      timeoutMs: 5_000,
+      writeOsc52: () => false,
+    });
+    assert.equal(result.status, "failed");
+    assert.ok(Date.now() - started < 2_000, "EPIPE must terminate without waiting for the normal timeout");
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      alive = false;
+    }
+    assert.equal(alive, false, `clipboard child ${pid} must be reaped before copy resolves`);
+  } finally {
+    process.env.PATH = previousPath;
+    if (previousPid === undefined) delete process.env.MDTERM_CLIPBOARD_PID;
+    else process.env.MDTERM_CLIPBOARD_PID = previousPid;
     rmSync(directory, { recursive: true, force: true });
   }
 });

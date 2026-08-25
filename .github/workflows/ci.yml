@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+# Hosted runners still execute all functional assertions for the performance
+# inputs, but do not enforce absolute wall-clock budgets.
+env:
+  MDTERM_ENFORCE_WALL_CLOCK_BUDGETS: "0"
+
 jobs:
   unix:
     name: Unix Node ${{ matrix.node }}

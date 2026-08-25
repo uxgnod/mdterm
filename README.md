@@ -4,6 +4,12 @@
 
 > A fast, read-only Markdown reader with keyboard, mouse, search, and table-of-contents support—right in your terminal.
 
+> Built end-to-end with Codex as the autonomous engineering agent; the maintainer set product direction and release acceptance.
+
+![mdterm in Ghostty](https://raw.githubusercontent.com/uxgnod/mdterm/main/assets/readme/mdterm-hero.png)
+
+Shown in Ghostty; mdterm works in any compatible terminal.
+
 ## Features
 
 - Full-screen, read-only Markdown rendering with headings, lists, tables, links, code, images, and task lists.
@@ -116,6 +122,8 @@ Code buttons and application text selection require mouse input. Normal clicks s
 
 `/` searches as you type. Enter closes the input and changes the footer to a persistent navigation bar:
 
+![Search navigation in mdterm](https://raw.githubusercontent.com/uxgnod/mdterm/main/assets/readme/mdterm-search.png)
+
 ```text
 Search “keyword” · 3/17 · n Next · p Previous · / Edit · Esc Clear
 ```
@@ -160,6 +168,8 @@ Only `http://` and `https://` links can be opened. The opener receives the URL a
 
 ## Rendering and large files
 
+![Rendering Markdown in mdterm](https://raw.githubusercontent.com/uxgnod/mdterm/main/assets/readme/mdterm-rendering.png)
+
 - ANSI-aware width calculations preserve CJK, combining characters, surrogate pairs, and emoji boundaries.
 - Tables and long code lines reflow to the terminal width.
 - Input terminal controls are sanitized before display.
@@ -184,6 +194,10 @@ npm test
 ```
 
 Tests use temporary homes and fake clipboard/opener backends. Do not point tests at a real user configuration or global npm prefix. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## Built with Codex
+
+Codex independently completed implementation, testing, documentation, and release preparation. The maintainer set product goals and scope decisions and performed final quality acceptance.
 
 ## Roadmap
 

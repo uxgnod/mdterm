@@ -4,6 +4,12 @@
 
 > 一款直接运行在终端中的快速、只读 Markdown 阅读器，支持键盘、鼠标、搜索和目录导航。
 
+> 本项目由 Codex 端到端驱动开发；维护者负责产品方向与发布验收。
+
+![mdterm 在 Ghostty 中运行](https://raw.githubusercontent.com/uxgnod/mdterm/main/assets/readme/mdterm-hero.png)
+
+截图使用 Ghostty；mdterm 可运行于任何兼容终端。
+
 ## 功能
 
 - 全屏只读渲染标题、列表、表格、链接、代码、图片和任务列表。
@@ -116,6 +122,8 @@ mdview <file.md> [--no-mouse] [--toc] [--lang en|zh-CN]
 
 `/` 会实时搜索。Enter 关闭输入框，底栏变成持久导航栏：
 
+![mdterm 搜索导航](https://raw.githubusercontent.com/uxgnod/mdterm/main/assets/readme/mdterm-search.png)
+
 ```text
 搜索 “keyword” · 3/17 · n 下一个 · p 上一个 · / 修改 · Esc 清除
 ```
@@ -160,6 +168,8 @@ mdview <file.md> [--no-mouse] [--toc] [--lang en|zh-CN]
 
 ## 渲染与大文件
 
+![mdterm 渲染 Markdown](https://raw.githubusercontent.com/uxgnod/mdterm/main/assets/readme/mdterm-rendering.png)
+
 - ANSI-aware 宽度计算保留 CJK、组合字符、surrogate pair 和 emoji 边界。
 - 表格和长代码行会按终端宽度重新排版。
 - 输入中的终端控制字符会在显示前安全处理。
@@ -184,6 +194,10 @@ npm test
 ```
 
 测试使用临时 home 和 fake 剪贴板/opener，不要指向真实用户配置或全局 npm prefix。参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [SECURITY.md](SECURITY.md)。
+
+## 由 Codex 驱动开发
+
+Codex 自主完成了程序实现、测试、文档与发布准备；维护者负责产品目标、范围决策与最终质量验收。
 
 ## 路线图
 

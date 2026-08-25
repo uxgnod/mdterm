@@ -83,6 +83,19 @@ while time.time() - started < 8:
             event_index += 1
             last_event_offset = len(output)
             continue
+        if isinstance(payload, dict) and payload.get("type") == "waitForOutput":
+            marker = payload.get("value", "").encode("utf-8")
+            deadline = started + float(payload.get("timeout", 7))
+            if marker not in output:
+                event_chunks.pop()
+                if time.time() >= deadline:
+                    timed_out = True
+                    break
+                time.sleep(0.01)
+                continue
+            event_index += 1
+            last_event_offset = len(output)
+            continue
         if isinstance(payload, dict) and payload.get("type") == "resize":
             fcntl.ioctl(
                 fd,
@@ -702,8 +715,11 @@ test("immediate q restores the PTY without theme probing", (context) => {
     context.skip("python3 PTY helper is unavailable");
     return;
   }
-  for (const [label, delay, quit] of [["q", 0.03, "q"], ["Ctrl+c", 0.25, "\u0003"]]) {
-    const result = runPty([fixture], [[delay, quit]], {
+  for (const [label, events] of [
+    ["q", [[0.03, "q"]]],
+    ["Ctrl+c", [[0.25, { type: "waitForOutput", value: "\u001b[?1049h", timeout: 7 }], [0.25, "\u0003"]]],
+  ]) {
+    const result = runPty([fixture], events, {
       PTY_CAPTURE_BEFORE_EVENTS: label === "Ctrl+c" ? "1" : undefined,
     });
     assert.ok(result, `${label} PTY result`);

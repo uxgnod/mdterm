@@ -48,10 +48,15 @@ function homeDirectory(home?: string): string {
   try {
     candidates.push(os.userInfo().homedir);
   } catch {
-    // Fall through to os.homedir() below.
+    // Fall through to os.homedir() and the temporary fallback below.
   }
-  candidates.push(os.homedir());
-  return candidates.find((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0 && path.isAbsolute(candidate)) ?? path.join(os.tmpdir(), "mdterm-home");
+  try {
+    candidates.push(os.homedir());
+  } catch {
+    // Some Windows service environments expose neither userInfo nor homedir.
+  }
+  return candidates.find((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0 && path.isAbsolute(candidate))
+    ?? path.resolve(os.tmpdir(), "mdterm-home");
 }
 
 export function configPath(home?: string): string {

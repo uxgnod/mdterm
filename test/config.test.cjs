@@ -171,6 +171,31 @@ test("configPath never turns empty, relative, or unset homes into a cwd-relative
   assert.equal(existsSync(path.join(process.cwd(), ".config", "mdterm")), false);
 });
 
+test("configPath uses an absolute temporary fallback when userInfo and homedir are unavailable", () => {
+  const probe = String.raw`
+    const os = require("node:os");
+    const path = require("node:path");
+    os.userInfo = () => { throw new Error("userInfo unavailable"); };
+    os.homedir = () => { throw new Error("homedir unavailable"); };
+    const { configPath } = require("./dist/config.js");
+    const resolved = configPath();
+    process.stdout.write(JSON.stringify({
+      path: resolved,
+      expected: path.join(path.resolve(os.tmpdir(), "mdterm-home"), ".config", "mdterm", "config.json"),
+      absolute: path.isAbsolute(resolved),
+    }));
+  `;
+  const result = spawnSync(process.execPath, ["-e", probe], {
+    cwd: path.join(__dirname, ".."),
+    encoding: "utf8",
+    env: { ...process.env, HOME: "", USERPROFILE: "" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const resolved = JSON.parse(result.stdout);
+  assert.equal(resolved.absolute, true);
+  assert.equal(resolved.path, resolved.expected);
+});
+
 test("FIFO and other non-regular configs cannot block version startup", { skip: process.platform === "win32" }, () => {
   const home = temporaryHome();
   const target = configPath(home);
